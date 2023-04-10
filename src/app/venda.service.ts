@@ -8,8 +8,44 @@ import { IClient, IItem, IVendaReponse, IVendas } from './models/interfaces';
 })
 export class VendaService {
   getVendas(idVenda: string, discount?: boolean): Observable<IVendaReponse> {
-    // Implement this
-    return of(null);
+    return this.getVendaById(idVenda).pipe(
+      switchMap((venda) =>
+        forkJoin([of(venda), this.getClientById(venda.clientId)])
+      ),
+      map(([venda, client]) => ({
+        ...venda,
+        clientName: client.nome,
+      })),
+      switchMap((venda) => {
+        const { items: itemsId } = venda;
+
+        const items$ = forkJoin(itemsId.map((item) => this.getItemById(item)));
+
+        return forkJoin([of(venda), items$]);
+      }),
+      map(([venda, itemsAll]) => {
+        const { items: itemsVenda, ...vendaNew } = venda;
+
+        const items = itemsVenda.map((item) =>
+          itemsAll.find(({ id }) => id === item)
+        );
+
+        const total = items.reduce((acc, item) => {
+          if (discount && item.desconto) {
+            acc += Number(item.preco) * (1 - Number(item.desconto) / 100);
+          } else {
+            acc += Number(item.preco);
+          }
+          return acc;
+        }, 0);
+
+        return {
+          ...vendaNew,
+          items,
+          total,
+        };
+      })
+    );
   }
 
   private getVendaById(id: string): Observable<IVendas> {
